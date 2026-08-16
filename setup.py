@@ -26,6 +26,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
+import webbrowser
 from datetime import date
 
 # requests isn't imported at module level: check_python_deps() (called first
@@ -242,6 +244,55 @@ def _wait_for_privacy_policy_live(url, timeout_seconds=150, interval_seconds=10)
     return False
 
 
+AI_CHAT_URLS = {
+    "1": ("Claude", "https://claude.ai/new?q={q}"),
+    "2": ("ChatGPT", "https://chatgpt.com/?q={q}"),
+}
+
+
+def offer_ai_content_help():
+    print("\n--- Draft Your Posts ---")
+    answer = input("Want help drafting posts with an AI assistant right now? [y/N]: ").strip().lower()
+    if answer != "y":
+        return
+
+    print("\nWhich AI tool do you use?")
+    print("  1. Claude")
+    print("  2. ChatGPT")
+    print("  3. Other (I'll paste the prompt in myself)")
+    tool_choice = input("Choose 1-3: ").strip()
+
+    topic = input("\nWhat should the posts be about? (e.g. 'career advice for engineers'): ").strip()
+    topic = topic or "[your topic — edit this before sending]"
+    count = input("How many posts? [default: 6]: ").strip() or "6"
+
+    prompt = (
+        f"Write me {count} LinkedIn posts about {topic}. Output ONLY a raw JSON array, no "
+        "markdown fences, no commentary before or after. Each item must be an object with "
+        'exactly two string fields: "text" (2-4 short paragraphs, \\n\\n between paragraphs, '
+        'specific numbers/stories over generic advice) and "hook" (a punchy line under 12 '
+        "words summarizing the post, for a graphic)."
+    )
+
+    copied = copy_to_clipboard(prompt)
+    print("\nPrompt copied to your clipboard." if copied else "\nCouldn't auto-copy — here's the prompt:")
+    if not copied:
+        print(f"\n{prompt}\n")
+
+    if tool_choice in AI_CHAT_URLS:
+        name, url_template = AI_CHAT_URLS[tool_choice]
+        url = url_template.format(q=urllib.parse.quote(prompt))
+        print(f"\nOpening a new {name} chat in your browser...")
+        webbrowser.open(url)
+        print("If the prompt isn't already sitting in the message box, it's on your")
+        print("clipboard — just paste it in.")
+    else:
+        print("\nOpen your preferred AI tool and paste the prompt in from your clipboard.")
+
+    print("\nOnce you have the JSON output: paste it into queue.json (replacing the example")
+    print("content), then run 'python3 check_queue.py' to confirm it's valid before pushing.")
+
+
 def setup_privacy_policy(has_gh):
     policy_path = "docs/privacy-policy.html"
 
@@ -390,14 +441,8 @@ def main():
         if secret_result.returncode == 0:
             print("\n✅ Setup complete!")
             print("\nNext steps:")
-            print("  1. Edit queue.json with your own posts (see queue.example.json for the format)")
-            print("     Tip: ask an AI assistant (Claude, ChatGPT, etc.) to draft them. Give it a")
-            print("     prompt like: \"Write me N LinkedIn posts about [topic]. Output ONLY a raw")
-            print("     JSON array, no markdown fences, no commentary. Each item must be an object")
-            print("     with exactly two string fields: 'text' (2-4 short paragraphs, \\n\\n between")
-            print("     them) and 'hook' (a punchy line under 12 words, for a graphic).\" Paste its")
-            print("     output in, replacing the example content — then run 'python3 check_queue.py'")
-            print("     to confirm it's valid JSON in the right shape before committing.")
+            print("  1. Add your own posts to queue.json (see queue.example.json for the format,")
+            print("     or use the AI drafting helper coming up next)")
             print("  2. git add queue.json && git commit -m 'add my posts' && git push")
             print("  3. Your posts will publish automatically on the schedule set in")
             print("     .github/workflows/scheduled-post.yml (edit the cron line to change timing)")
@@ -408,6 +453,8 @@ def main():
         print("\nGitHub CLI (gh) not found or not logged in.")
         print("Install it from https://cli.github.com, run 'gh auth login', then re-run this script.")
         print("OR follow the manual steps in README.md 'Step 4' to add the TOKENS_JSON secret yourself.")
+
+    offer_ai_content_help()
 
 
 if __name__ == "__main__":
