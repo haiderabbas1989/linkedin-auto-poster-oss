@@ -47,7 +47,9 @@ This single command handles almost everything:
 
 1. **Installs dependencies** (requests, pillow)
 2. **Auto-publishes a privacy policy page** via GitHub Pages, using an email
-   you provide, and **copies the live URL to your clipboard**
+   you provide, **copies the live URL to your clipboard**, and **waits until
+   the page actually resolves** (up to ~2.5 min — GitHub Pages isn't instant)
+   before telling you it's safe to use, so you're never handed a dead URL
 3. **Pauses** so you can go create your LinkedIn Developer app using that URL:
    - Go to [linkedin.com/developers/apps](https://www.linkedin.com/developers/apps) → **Create App**
    - **LinkedIn Page**: no company? Select **"Default Company Page for Individual Developer"** — a built-in LinkedIn option made exactly for this case

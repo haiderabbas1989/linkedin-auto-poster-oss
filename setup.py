@@ -25,7 +25,12 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from datetime import date
+
+# requests isn't imported at module level: check_python_deps() (called first
+# in main()) is what installs it, so importing it here would crash on a
+# machine that doesn't have it yet, before we get the chance to install it.
 
 
 def run(cmd, **kwargs):
@@ -211,6 +216,32 @@ def setup_config():
     return config
 
 
+def _wait_for_privacy_policy_live(url, timeout_seconds=150, interval_seconds=10):
+    """Polls the privacy policy URL until it returns 200, or times out.
+    GitHub Pages can take a minute or two after first enabling before the
+    URL actually resolves — without this check, the wizard would send the
+    user straight to LinkedIn's app form with a URL that still 404s."""
+    import requests
+
+    print("Checking that the privacy policy page is actually live (LinkedIn will")
+    print("reject the app form if the URL doesn't resolve)...")
+    waited = 0
+    while waited < timeout_seconds:
+        try:
+            if requests.get(url, timeout=5).status_code == 200:
+                print("Confirmed live — safe to paste into the LinkedIn app form now.")
+                return True
+        except requests.RequestException:
+            pass
+        time.sleep(interval_seconds)
+        waited += interval_seconds
+        print(f"  ...still waiting on GitHub Pages ({waited}s elapsed)")
+    print("Still not reachable after 2.5 minutes. Do NOT paste this URL into the")
+    print("LinkedIn app form yet — open it in your browser first. If it's still a")
+    print("404, check Settings > Pages on this repo's GitHub page for build errors.")
+    return False
+
+
 def setup_privacy_policy(has_gh):
     policy_path = "docs/privacy-policy.html"
 
@@ -224,6 +255,7 @@ def setup_privacy_policy(has_gh):
                 copied = copy_to_clipboard(url)
                 print(f"Your privacy policy URL: {url}")
                 print("(copied to clipboard)" if copied else "(couldn't auto-copy — copy it manually above)")
+                _wait_for_privacy_policy_live(url)
                 return url
         return None
 
@@ -270,7 +302,8 @@ def setup_privacy_policy(has_gh):
         ["gh", "api", f"repos/{owner}/{name}/pages", "-X", "POST", "--input", "-"],
         input=pages_body, capture_output=True, text=True,
     )
-    if pages_result.returncode != 0 and "already enabled" not in pages_result.stderr:
+    pages_enabled = pages_result.returncode == 0 or "already enabled" in pages_result.stderr
+    if not pages_enabled:
         print("\nCouldn't enable GitHub Pages automatically:")
         print(f"  {pages_result.stderr.strip()}")
         if "current plan does not support" in pages_result.stderr:
@@ -283,7 +316,12 @@ def setup_privacy_policy(has_gh):
     print(f"\nYour privacy policy URL: {url}")
     print("(copied to your clipboard — paste it into the LinkedIn app form)" if copied
           else "(couldn't auto-copy — copy the URL above manually)")
-    print("Note: GitHub Pages can take a minute or two to go live on first publish.")
+
+    if pages_enabled:
+        _wait_for_privacy_policy_live(url)
+    else:
+        print("Do NOT proceed to create your LinkedIn app yet — enable Pages manually")
+        print(f"(see above), confirm {url} loads in your browser, then continue.")
     return url
 
 
