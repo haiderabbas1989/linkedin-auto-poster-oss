@@ -313,6 +313,50 @@ def offer_ai_content_help():
     print("content), then run 'python3 check_queue.py' to confirm it's valid before pushing.")
 
 
+def offer_to_push_queue():
+    print("\n--- Push Your Queue ---")
+    print("Once you've added your posts to queue.json and saved the file, I can commit")
+    print("and push it for you so the schedule can start picking them up.")
+    ready = input("Let me know when it's saved — push now? [y/N]: ").strip().lower()
+    if ready != "y":
+        print("No problem — push whenever you're ready with:")
+        print("  git add queue.json && git commit -m 'add my posts' && git push")
+        return
+
+    while True:
+        check_result = run([sys.executable, "check_queue.py"], capture_output=True, text=True)
+        lines = check_result.stdout.splitlines()
+        status = next((l.split("=", 1)[1] for l in lines if l.startswith("status=")), "unknown")
+
+        if status == "error":
+            message = next((l.split("=", 1)[1] for l in lines if l.startswith("message=")), "unknown error")
+            print(f"\nqueue.json still has a problem: {message}")
+            retry = input("Fix it, save, then press Enter to check again (or type 'skip' to push it yourself later): ").strip().lower()
+            if retry == "skip":
+                print("Skipping — push later once it's fixed, with the command above.")
+                return
+            continue
+
+        with open("queue.json") as f, open("queue.example.json") as ef:
+            unchanged = f.read().strip() == ef.read().strip()
+        if unchanged:
+            print("\nqueue.json still looks like the unedited example placeholders.")
+            proceed = input("Push it anyway? [y/N]: ").strip().lower()
+            if proceed != "y":
+                print("Skipping — edit queue.json with your real posts, then push whenever ready.")
+                return
+
+        break
+
+    run(["git", "add", "queue.json"])
+    run(["git", "commit", "-m", "add my posts"])
+    push_result = run(["git", "push"])
+    if push_result.returncode == 0:
+        print("\n✅ Pushed. Your posts will go out on the schedule set earlier.")
+    else:
+        print("\nCouldn't push automatically — run 'git push' manually.")
+
+
 def setup_privacy_policy(has_gh):
     policy_path = "docs/privacy-policy.html"
 
@@ -475,6 +519,7 @@ def main():
         print("OR follow the manual steps in README.md 'Step 4' to add the TOKENS_JSON secret yourself.")
 
     offer_ai_content_help()
+    offer_to_push_queue()
 
 
 if __name__ == "__main__":
