@@ -333,7 +333,7 @@ def main():
 
     is_first_time_setup = not os.path.exists("config.json")
 
-    setup_privacy_policy(has_gh)
+    policy_url = setup_privacy_policy(has_gh)
 
     if is_first_time_setup and has_gh:
         setup_config()
@@ -348,7 +348,11 @@ def main():
     print("  - LinkedIn Page: select 'Default Company Page for Individual Developer'")
     print("    if you don't have a company (or use your real company Page if you do)")
     print("  - Logo: upload default-logo.png from this folder if you don't have one")
-    print("  - Privacy Policy URL: use the URL printed above")
+    if policy_url:
+        print(f"  - Privacy Policy URL: {policy_url}")
+    else:
+        print("  - Privacy Policy URL: use the URL printed above (or see README.md 'Step 3'")
+        print("    for the manual fallback if automatic publishing wasn't available)")
     print("  - Add BOTH products: 'Share on LinkedIn' and")
     print("    'Sign In with LinkedIn using OpenID Connect'")
     print("  - Go to the app's Auth tab: your Client ID and Client Secret are shown there")
