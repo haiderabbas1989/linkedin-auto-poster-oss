@@ -1,3 +1,5 @@
+![Example of an auto-generated LinkedIn post graphic](docs/example-graphic.png)
+
 # LinkedIn Auto-Poster
 
 Post to your own LinkedIn profile on a schedule, automatically, with generated
