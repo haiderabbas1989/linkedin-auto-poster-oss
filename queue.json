@@ -1,0 +1,10 @@
+[
+  {
+    "text": "This is where your post text goes. Use \\n\\n for paragraph breaks — LinkedIn respects them.\n\nWrite 2-4 short paragraphs. Specific numbers and real stories perform better than generic advice.",
+    "hook": "A short, punchy line (under ~12 words) used to generate the graphic image."
+  },
+  {
+    "text": "You can queue as many posts as you want here. Each run of the scheduled workflow publishes the next one and removes it from this file automatically.",
+    "hook": "Delete this example file's content and replace it with your own posts."
+  }
+]

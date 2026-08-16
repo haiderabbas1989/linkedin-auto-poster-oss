@@ -1,0 +1,104 @@
+name: Post to LinkedIn
+
+on:
+  schedule:
+    # Default schedule — this line is auto-updated by setup.py based on
+    # your chosen frequency. Manual edits here are fine too; use
+    # https://crontab.guru to build an expression.
+    - cron: "30 3 * * 1,4"
+  workflow_dispatch: {}  # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write   # to commit the shrunk queue back
+  issues: write      # to open reminder issues (token expiry, low queue)
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests pillow
+
+      - name: Write tokens.json from secret
+        run: echo "$TOKENS_JSON" > tokens.json
+        env:
+          TOKENS_JSON: ${{ secrets.TOKENS_JSON }}
+
+      - name: Check token expiry
+        id: expiry
+        run: python check_expiry.py
+
+      - name: Open/refresh a reminder issue if token is expiring soon or expired
+        if: steps.expiry.outputs.status == 'warning' || steps.expiry.outputs.status == 'expired' || steps.expiry.outputs.status == 'unknown'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATUS: ${{ steps.expiry.outputs.status }}
+          DAYS_LEFT: ${{ steps.expiry.outputs.days_left }}
+        run: |
+          TITLE="LinkedIn token needs reauthorization"
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          BODY="Status: $STATUS. Days left: $DAYS_LEFT. To renew: double-click renew.command (Mac) or renew.bat (Windows) in your project folder — or run 'python3 setup.py' manually."
+          if [ -z "$EXISTING" ]; then
+            gh issue create --title "$TITLE" --body "$BODY"
+          else
+            gh issue comment "$EXISTING" --body "$BODY"
+          fi
+
+      - name: Check queue health
+        id: queue
+        if: steps.expiry.outputs.status != 'expired'
+        run: python check_queue.py
+
+      - name: Open/refresh a reminder issue if queue.json has a formatting error
+        if: steps.expiry.outputs.status != 'expired' && steps.queue.outputs.status == 'error'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MESSAGE: ${{ steps.queue.outputs.message }}
+        run: |
+          TITLE="queue.json has a formatting error"
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          BODY="$MESSAGE
+
+          Fix queue.json (see queue.example.json for the expected format), then git push. Posting is paused until this is fixed."
+          if [ -z "$EXISTING" ]; then
+            gh issue create --title "$TITLE" --body "$BODY"
+          else
+            gh issue comment "$EXISTING" --body "$BODY"
+          fi
+
+      - name: Open/refresh a reminder issue if queue is low or empty
+        if: steps.expiry.outputs.status != 'expired' && (steps.queue.outputs.status == 'low' || steps.queue.outputs.status == 'empty')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATUS: ${{ steps.queue.outputs.status }}
+          COUNT: ${{ steps.queue.outputs.count }}
+        run: |
+          TITLE="Your post queue is running low"
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state open --json number --jq '.[0].number')
+          BODY="Status: $STATUS. Posts remaining: $COUNT. Add more posts to queue.json (see queue.example.json for the format), then git push."
+          if [ -z "$EXISTING" ]; then
+            gh issue create --title "$TITLE" --body "$BODY"
+          else
+            gh issue comment "$EXISTING" --body "$BODY"
+          fi
+
+      - name: Post next item in queue
+        if: steps.expiry.outputs.status != 'expired' && steps.queue.outputs.status != 'empty' && steps.queue.outputs.status != 'error'
+        run: python post_to_linkedin.py --from-queue
+
+      - name: Commit updated queue
+        if: steps.expiry.outputs.status != 'expired' && steps.queue.outputs.status != 'empty' && steps.queue.outputs.status != 'error'
+        run: |
+          git config user.name "linkedin-auto-poster"
+          git config user.email "actions@users.noreply.github.com"
+          git add queue.json
+          git diff --staged --quiet || git commit -m "Auto-post: remove published item from queue"
+          git push
