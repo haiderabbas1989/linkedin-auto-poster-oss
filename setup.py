@@ -256,6 +256,17 @@ def offer_ai_content_help():
     if answer != "y":
         return
 
+    print("\nTip: posts sound a lot less generic if the AI knows your real background.")
+    print("Downloading your LinkedIn profile as a PDF and attaching it in the chat lets")
+    print("it pull from your actual experience, tone, and expertise instead of guessing.")
+    print("\nHow to download your LinkedIn profile as a PDF:")
+    print("  1. Go to your own LinkedIn profile (click your photo, top right, > View Profile)")
+    print("  2. Just below your intro card (name/photo/headline), click the 'More' button")
+    print("     (three dots '...')")
+    print("  3. Select 'Save to PDF' from the dropdown")
+    print("  4. LinkedIn generates it and downloads it to your computer automatically")
+    has_pdf = input("\nDownloaded it? [y/N] (or just Enter to skip): ").strip().lower() == "y"
+
     print("\nWhich AI tool do you use?")
     print("  1. Claude")
     print("  2. ChatGPT")
@@ -267,7 +278,13 @@ def offer_ai_content_help():
     count = input("How many posts? [default: 6]: ").strip() or "6"
 
     prompt = (
-        f"Write me {count} LinkedIn posts about {topic}. Output ONLY a raw JSON array, no "
+        f"Write me {count} LinkedIn posts about {topic}. "
+        + (
+            "I've attached my LinkedIn profile as a PDF — base the posts on my real "
+            "experience, tone, and expertise from it, not generic advice. "
+            if has_pdf else ""
+        )
+        + "Output ONLY a raw JSON array, no "
         "markdown fences, no commentary before or after. Each item must be an object with "
         'exactly two string fields: "text" (2-4 short paragraphs, \\n\\n between paragraphs, '
         'specific numbers/stories over generic advice) and "hook" (a punchy line under 12 '
@@ -288,6 +305,9 @@ def offer_ai_content_help():
         print("clipboard — just paste it in.")
     else:
         print("\nOpen your preferred AI tool and paste the prompt in from your clipboard.")
+
+    if has_pdf:
+        print("Don't forget to attach your downloaded profile PDF to the chat too.")
 
     print("\nOnce you have the JSON output: paste it into queue.json (replacing the example")
     print("content), then run 'python3 check_queue.py' to confirm it's valid before pushing.")
