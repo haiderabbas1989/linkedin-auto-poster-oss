@@ -9,6 +9,8 @@ but you ever holds your LinkedIn access token.
 - Runs on a schedule (default: Monday & Thursday) with zero servers of your own
 - Auto-generates a branded quote-card graphic for each post
 - Auto-publishes a privacy policy page for you (needed for the LinkedIn app form)
+- Offers to draft your posts with Claude/ChatGPT (optionally from your LinkedIn
+  profile PDF) and push them for you, right from the setup wizard
 - Warns you (via a GitHub issue → email) before your access token expires
 - 100% yours — your own repo, your own token, your own data
 
@@ -69,6 +71,19 @@ This single command handles almost everything:
    and 15th); or pick **Custom** and enter your own cron expression for
    anything else — [crontab.guru](https://crontab.guru) helps build one.
    All presets post at a fixed 9:00 AM IST; use Custom for a different time.
+8. **Offers to draft your posts for you** — asks if you want AI help, which
+   tool you use (Claude / ChatGPT / other), what to post about, and how many.
+   First it walks you through downloading your LinkedIn profile as a PDF
+   (`More` button → `Save to PDF`) so the AI can write from your actual
+   experience instead of generic advice. It then builds the exact prompt,
+   copies it to your clipboard, and opens a new chat with it pre-loaded —
+   if the deep link doesn't pre-fill for your account, the prompt is on your
+   clipboard either way, just paste it in (and attach the PDF, if you got one).
+9. **Offers to push `queue.json` for you** — once you've pasted the AI's
+   output (or written your own posts) into `queue.json` and saved it, tells
+   it to check: it re-validates the file (looping if it still needs fixing),
+   warns you if it still looks like the unedited example placeholders, then
+   commits and pushes automatically.
 
 ### Changing frequency, branding, or image preference later
 
@@ -96,6 +111,10 @@ to your repo → **Settings** → **Secrets and variables** → **Actions** →
 **New repository secret** → name it `TOKENS_JSON` → paste the value → Save.
 
 ### Step 4 — Add your content
+
+If you used the wizard's built-in AI helper (Step 8) and let it push for you
+(Step 9), **you're already done** — skip to the next section. Otherwise, or
+to add more posts later, here's the manual path:
 
 Edit `queue.json` — see `queue.example.json` for the format. It must be a JSON
 array where each entry is either a plain string, or an object with:
@@ -128,8 +147,10 @@ queue automatically.
 
 #### Generating content with an AI assistant
 
-You can ask an AI assistant (Claude, ChatGPT, etc.) to draft posts directly in
-the right format. Give it a prompt like:
+`setup.py`'s Step 8 does this interactively (asks your topic/count, offers to
+use your LinkedIn profile PDF for context, opens a pre-loaded chat with
+Claude or ChatGPT). To do it by hand instead — with any AI assistant, at any
+time — give it a prompt like:
 
 > Write me 6 LinkedIn posts about [your topic]. Output ONLY a raw JSON array,
 > no markdown code fences, no commentary before or after. Each item must be an
