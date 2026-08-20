@@ -30,6 +30,13 @@ company or not).
 Click **"Use this template"** at the top of this repo's GitHub page → create
 your own repository (keep it **Private**, since it'll hold your content queue).
 
+GitHub Pages (needed for the privacy policy page below) doesn't work on a
+private repo unless you're on GitHub Pro/Team — on the Free plan, `setup.py`
+handles this automatically by publishing the privacy policy page to a small
+separate **public** sibling repo instead (`YOUR-REPO-NAME-privacy-policy`,
+containing only that one HTML page — no app code, no tokens). You don't need
+to do anything for this; it just works.
+
 Clone it locally:
 ```
 git clone https://github.com/YOUR-USERNAME/YOUR-REPO-NAME.git

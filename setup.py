@@ -85,6 +85,109 @@ def get_repo_info():
     return data["owner"]["login"], data["name"]
 
 
+def _repo_is_private(owner, name):
+    result = run(["gh", "repo", "view", f"{owner}/{name}", "--json", "isPrivate"], capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    return json.loads(result.stdout)["isPrivate"]
+
+
+def _companion_pages_repo_name(name):
+    return f"{name}-privacy-policy"
+
+
+def _ensure_public_repo(owner, name, description):
+    """Creates a public repo if it doesn't already exist. Returns True either way
+    (already existed, or was just created) — False only if creation failed."""
+    check = run(["gh", "repo", "view", f"{owner}/{name}"], capture_output=True, text=True)
+    if check.returncode == 0:
+        return True
+    create = run(
+        ["gh", "repo", "create", f"{owner}/{name}", "--public", "--description", description],
+        capture_output=True, text=True,
+    )
+    return create.returncode == 0
+
+
+def _push_file_to_repo(owner, name, path, content, message):
+    """Creates or updates a file in a repo via the Contents API — no local clone needed."""
+    import base64
+
+    body = {"message": message, "content": base64.b64encode(content.encode()).decode()}
+
+    get_result = run(["gh", "api", f"repos/{owner}/{name}/contents/{path}"], capture_output=True, text=True)
+    if get_result.returncode == 0:
+        body["sha"] = json.loads(get_result.stdout)["sha"]
+
+    put_result = run(
+        ["gh", "api", f"repos/{owner}/{name}/contents/{path}", "-X", "PUT", "--input", "-"],
+        input=json.dumps(body), capture_output=True, text=True,
+    )
+    return put_result.returncode == 0
+
+
+def _enable_pages(owner, name, path):
+    """Enables GitHub Pages for a repo, serving from `path` on the main branch.
+    Returns True if enabled, including if it already was."""
+    body = json.dumps({"build_type": "legacy", "source": {"branch": "main", "path": path}})
+    result = run(
+        ["gh", "api", f"repos/{owner}/{name}/pages", "-X", "POST", "--input", "-"],
+        input=body, capture_output=True, text=True,
+    )
+    return result.returncode == 0 or "already enabled" in result.stderr
+
+
+def _url_is_live(url):
+    import requests
+    try:
+        return requests.get(url, timeout=5).status_code == 200
+    except requests.RequestException:
+        return False
+
+
+def _publish_privacy_policy(owner, name, content):
+    """Publishes `content` as a live Pages URL. GitHub's Free plan doesn't allow
+    Pages on a private repo, so if `name` is private, this creates (or reuses) a
+    small separate always-public sibling repo just for this one page instead —
+    no app code or tokens in it, only the privacy policy HTML. Returns
+    (url, pages_enabled); url is None if publishing failed outright."""
+    is_private = _repo_is_private(owner, name)
+
+    if is_private:
+        companion = _companion_pages_repo_name(name)
+        print(f"\n{owner}/{name} is private, and GitHub Pages needs a public repo on the")
+        print("Free plan (or GitHub Pro/Team to keep it private). Publishing this page to")
+        print(f"a small separate public repo instead: {owner}/{companion}")
+
+        description = f"Privacy policy page for {name} (auto-generated, hosted here since {name} is private)"
+        if not _ensure_public_repo(owner, companion, description):
+            print(f"\nCouldn't create {owner}/{companion} automatically.")
+            print("Create a public repo yourself, enable Pages on it (Settings > Pages,")
+            print("source: main branch, / root), and host docs/privacy-policy.html's")
+            print("content there as index.html — then use that URL for your LinkedIn app.")
+            return None, False
+
+        if not _push_file_to_repo(owner, companion, "index.html", content, "add privacy policy page"):
+            print(f"\nCouldn't push the page to {owner}/{companion} automatically.")
+            print("Push docs/privacy-policy.html there yourself as index.html.")
+            return None, False
+
+        pages_enabled = _enable_pages(owner, companion, "/")
+        if not pages_enabled:
+            print(f"\nCouldn't enable GitHub Pages on {owner}/{companion} automatically.")
+            print("Enable it manually: that repo's Settings > Pages > Source: 'main' branch, '/' folder.")
+
+        return f"https://{owner}.github.io/{companion}/", pages_enabled
+
+    print("Enabling GitHub Pages...")
+    pages_enabled = _enable_pages(owner, name, "/docs")
+    if not pages_enabled:
+        print("\nCouldn't enable GitHub Pages automatically. Enable it manually:")
+        print("repo Settings > Pages > Source: 'main' branch, '/docs' folder.")
+
+    return f"https://{owner}.github.io/{name}/privacy-policy.html", pages_enabled
+
+
 POST_TIME_CRON = "30 3"  # 9:00 AM IST — the hour/minute used by every preset below
 
 DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -357,22 +460,53 @@ def offer_to_push_queue():
         print("\nCouldn't push automatically — run 'git push' manually.")
 
 
+def _finish_publishing(owner, name, content):
+    """Shared tail end: actually publish, print/copy the URL, wait for it to
+    resolve (or explain why it might not yet)."""
+    url, pages_enabled = _publish_privacy_policy(owner, name, content)
+    if url is None:
+        return None
+
+    copied = copy_to_clipboard(url)
+    print(f"\nYour privacy policy URL: {url}")
+    print("(copied to your clipboard — paste it into the LinkedIn app form)" if copied
+          else "(couldn't auto-copy — copy the URL above manually)")
+
+    if pages_enabled:
+        _wait_for_privacy_policy_live(url)
+    else:
+        print("Do NOT proceed to create your LinkedIn app yet — enable Pages manually")
+        print(f"(see above), confirm {url} loads in your browser, then continue.")
+    return url
+
+
 def setup_privacy_policy(has_gh):
     policy_path = "docs/privacy-policy.html"
 
     if os.path.exists(policy_path):
         print("\nPrivacy policy page already exists locally, skipping generation.")
-        if has_gh:
-            info = get_repo_info()
-            if info:
-                owner, name = info
-                url = f"https://{owner}.github.io/{name}/privacy-policy.html"
-                copied = copy_to_clipboard(url)
-                print(f"Your privacy policy URL: {url}")
-                print("(copied to clipboard)" if copied else "(couldn't auto-copy — copy it manually above)")
-                _wait_for_privacy_policy_live(url)
-                return url
-        return None
+        if not has_gh:
+            return None
+        info = get_repo_info()
+        if not info:
+            return None
+        owner, name = info
+
+        is_private = _repo_is_private(owner, name)
+        companion = _companion_pages_repo_name(name)
+        url = f"https://{owner}.github.io/{companion}/" if is_private else f"https://{owner}.github.io/{name}/privacy-policy.html"
+
+        if _url_is_live(url):
+            copied = copy_to_clipboard(url)
+            print(f"Your privacy policy URL: {url}")
+            print("(copied to clipboard)" if copied else "(couldn't auto-copy — copy it manually above)")
+            return url
+
+        print(f"{url} isn't live yet — (re)publishing it now (this can happen if the")
+        print("page was generated but never actually pushed/enabled in an earlier run).")
+        with open(policy_path) as f:
+            content = f.read()
+        return _finish_publishing(owner, name, content)
 
     if not has_gh:
         print("\nSkipping automatic privacy policy publishing (GitHub CLI not available).")
@@ -411,33 +545,7 @@ def setup_privacy_policy(has_gh):
         return None
     owner, name = info
 
-    print("Enabling GitHub Pages...")
-    pages_body = json.dumps({"build_type": "legacy", "source": {"branch": "main", "path": "/docs"}})
-    pages_result = run(
-        ["gh", "api", f"repos/{owner}/{name}/pages", "-X", "POST", "--input", "-"],
-        input=pages_body, capture_output=True, text=True,
-    )
-    pages_enabled = pages_result.returncode == 0 or "already enabled" in pages_result.stderr
-    if not pages_enabled:
-        print("\nCouldn't enable GitHub Pages automatically:")
-        print(f"  {pages_result.stderr.strip()}")
-        if "current plan does not support" in pages_result.stderr:
-            print("  Your GitHub plan doesn't support Pages on a private repo (Free tier")
-            print("  requires the repo to be public, or upgrade to GitHub Pro/Team).")
-        print("  Enable it manually: repo Settings > Pages > Source: 'main' branch, '/docs' folder.")
-
-    url = f"https://{owner}.github.io/{name}/privacy-policy.html"
-    copied = copy_to_clipboard(url)
-    print(f"\nYour privacy policy URL: {url}")
-    print("(copied to your clipboard — paste it into the LinkedIn app form)" if copied
-          else "(couldn't auto-copy — copy the URL above manually)")
-
-    if pages_enabled:
-        _wait_for_privacy_policy_live(url)
-    else:
-        print("Do NOT proceed to create your LinkedIn app yet — enable Pages manually")
-        print(f"(see above), confirm {url} loads in your browser, then continue.")
-    return url
+    return _finish_publishing(owner, name, content)
 
 
 def main():
